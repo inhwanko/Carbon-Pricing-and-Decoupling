@@ -5,6 +5,10 @@ date: 'Feb 11 2020'
 output: html_document
 ---
 
+**The html version of this Rmarkdown is accessible via below link**
+
+https://rpubs.com/inhwanko/kolee2020replica
+
 **Replica of the draft research article as follows:**
 
 
