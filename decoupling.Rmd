@@ -1,0 +1,339 @@
+---
+title: "Carbon pricing policies and decoupling between greenhouse gas emissions and economic growth: A panel study of 30 European countries, 1996-2014"
+author: "Inhwan Ko"
+date: 'Feb 11 2020'
+output: html_document
+---
+
+**Replica of the draft research article as follows:**
+
+
+Ko, Inhwan, and Taedong Lee. Carbon pricing policies and decoupling between greenhouse gas emissions and economic growth: A panel study of 30 European countries, 1996-2014. A paper under review by *Global Environmental Politics* journal (submitted on Feb 11 2020). 
+
+
+**Authors' bio**
+
+
+**Inhwan Ko**
+
+PhD student, Department of Political Science, University of Washington, Seattle, US
+
+**Taedong Lee, PhD**
+
+Associate Professor, Political Science Department, Seoul, Korea
+
+
+**Abstract**
+
+This study explores why the levels of decoupling between greenhouse gas (GHG) emissions and economic growth vary across time and between countries, and examines which factors are driving this decoupling. We argue that the implementation of carbon pricing policies facilitates decoupling, as they are designed to achieve cost-efficient GHG reduction. We analyze the panel data of 30 European countries between 1996 and 2014 to examine the relationships between two carbon pricing policies, emission trading and carbon tax, and emission intensity (GHG emissions per unit of GDP) we use to capture decoupling trends. Our result indicates that while controlling for factors that may affect emission intensity, emission trading contributes to decoupling in all models, whereas carbon tax does not; this has also been suggested in previous literature. Furthermore, emission trading is negatively associated with GHG emissions, implying that it contributes to not weak, but strong decoupling of economic growth from GHG emissions.
+
+
+**A full-version paper is uploaded in the same repository. Or, visit my github:**
+
+https://github.com/inhwanko/carbonpricing_decoupling
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Data import
+
+```{r, warning=F, message=F}
+# attach necessary packages
+library(foreign)
+library(tidyverse)
+library(plm)
+library(cem)
+library(ggplot2)
+library(ggpubr)
+library(clubSandwich)
+library(estimatr)
+library(broom)
+library(stargazer)
+library(Hmisc)
+
+# setwd("~")
+data <- read.csv("decoupling.csv") ## raw dataset is uploaded on the github 
+data <- as_tibble(data)
+data ## the first column shows an encoding error (country), but it does not matter since we will use "countrycode". 
+```
+
+# 2. Data cleaning
+
+```{r, warning=F, message=F}
+
+data$gdpgrowth <- as.numeric(data$gdpgrowth)
+
+## make data as balanced panel data
+data1 <- data[,-27] # data without "policyIV" variable
+data2 <- subset(data, subset=(data$countrycode!="ICE")) # data without ICELAND
+
+## check if data are panel data
+data1 <- pdata.frame(data1, index=c("countrycode","year"))
+data2 <- pdata.frame(data2, index=c("countrycode","year"))
+
+### deleting the first two rows that are NAs
+data1 <- data1[-c(1:2),]
+data2 <- data2[-c(1:2),]
+
+### only leaving variables that are used for the analysis
+data1 <- data1[,c(2,3,17,27,28,23,24,22,21,6,16,7)]
+data2 <- data2[,c(2,3,17,28,29,23,24,22,21,27,6,16)]
+```
+
+# 3. Model results (Table 5)
+
+```{r}
+## Model 1
+model1f <- plm(decoup ~ ETS + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 urbanpopper + gdpgrowth, 
+               data=data1, model="within")
+model1r <- plm(decoup ~ ETS + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 urbanpopper + gdpgrowth, 
+               data=data1, model="random")
+phtest(model1f, model1r) 
+
+## Model 2
+model2f <- plm(decoup ~ ETS + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 polity + urbanpopper + gdpgrowth, 
+               data=data2, model="within")
+model2r <- plm(decoup ~ ETS + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 polity + urbanpopper + gdpgrowth, 
+               data=data2, model="random")
+phtest(model2f, model2r) 
+
+## Model 3
+model3f <- plm(emission ~ ETS + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 urbanpopper + gdpgrowth, 
+               data=data1, model="within")
+model3r <- plm(emission ~ ETS + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 urbanpopper + gdpgrowth, 
+               data=data1, model="random")
+phtest(model3f, model3r) 
+
+```
+
+**Model Results (Table 5)**
+
+```{r results='asis'}
+stargazer(model1r, model2f, model3r, type='html') 
+```
+
+**Appendix B**
+
+```{r results='asis'}
+stargazer(model1f, model2r, model3f, type='html') 
+```
+
+
+# 4. T-test, ANOVA
+
+```{r}
+## subsetting the data frame into pre- and post- ETS and carbon tax period
+
+dataets1 <- subset(data, subset=(ETS==1))
+dataets0 <- subset(data, subset=(ETS==0))
+datatax1 <- subset(data, subset=(carbontax==1))
+datatax0 <- subset(data, subset=(carbontax==0))
+
+## T-test results
+
+t.test(dataets1$emission, dataets0$emission)
+t.test(datatax1$emission, datatax0$emission)
+
+## ANOVA preparation
+
+anovadata <- data1
+anovadata$ETS[anovadata$ETS==1] <- "ETS"
+anovadata$ETS[anovadata$ETS==0] <- "No ETS"
+anovadata$carbontax[anovadata$carbontax==1] <- "Carbon Tax"
+anovadata$carbontax[anovadata$carbontax==0] <- "No Carbon Tax"
+
+## ANOVA results
+
+aov1 <- aov(decoup ~ ETS, data=anovadata)
+summary(aov1)
+aov2 <- aov(decoup ~ carbontax, data=anovadata)
+summary(aov2)
+```
+
+**Tukey Honest Significant Difference test results (Table 3)**
+
+```{r} 
+TukeyHSD(aov1)
+TukeyHSD(aov2)
+```
+
+**Boxplot of the sample means between treatment and control groups (Figure 3-4)**
+
+```{r}
+ggboxplot(anovadata, x="ETS", y="decoup",
+          color="ETS", palette=c("#FC4E07","#00AFBB"),
+          order=c("No ETS", "ETS"),
+          ylab="Average Emission Intensity", xlab="Country Group with / without ETS")
+
+ggboxplot(anovadata, x="carbontax", y="decoup",
+          color="carbontax", palette=c("#FC4E07","#00AFBB"),
+          order=c("No Carbon Tax", "Carbon Tax"),
+          ylab="Average Emission Intensity", xlab="Country Group with / without Carbon Tax")
+```
+
+
+# 5. Coarsened Exact Matching results (Table 6)
+
+```{r, warning=F, message=F}
+require(cem)
+
+## assigning treatment value (1- ETS, 0- No ETS)
+
+ets1 <- which(data1$ETS==1)
+ets0 <- which(data1$ETS==0)
+nets1 <- length(ets1)
+nets0 <- length(ets0)
+
+## checking naive mean difference
+
+mean(data1$decoup[ets1])-mean(data1$decoup[ets0])
+
+## assigning control variables (including carbon tax)
+
+vars_ets <- c("carbontax", "co2inten","epdtloss","consumere","consumeff","urbanpopper","gdpgrowth")
+
+## you will only need variables to do the matching, without countrycode and year
+data_ets <- data1[,c(-1,-2,-12)]
+
+## deriving univariate imbalance measures:
+
+imbalance(group=data_ets$ETS, data=data_ets[vars_ets])
+
+
+## do matching
+mat <- cem(treatment="ETS", data=data_ets, drop="decoup")
+mat
+```
+
+**Sample average treatment effect of the treated (SATT) in different models (Table 6)**
+
+```{r}
+ets_linear <- att(mat, decoup~ETS, data=data_ets, model="linear")
+
+ets_linear_control <- att(mat, decoup~ETS + carbontax + co2inten + epdtloss +
+                    consumere + consumeff + urbanpopper + gdpgrowth, data=data_ets,
+                  model="linear") 
+
+ets_linearRE_control <- att(mat, decoup~ETS +carbontax + co2inten + epdtloss +
+             consumere + consumeff + urbanpopper + gdpgrowth, data=data_ets,
+           model="linear-RE") 
+
+ets_linear ## first row of table 
+ets_linear_control ## second row of the table
+ets_linearRE_control ## third row of the table
+```
+
+Though not included in the paper, we can draw a plot of the output of the SATT derived above. For instance, our finding is based on the linear random effects model with control variables, which exhibits statistically significant and negative coefficient estimate of the effect of ETS on emission intensity, can be plotted as below:
+
+```{r}
+plot(ets_linearRE_control, mat, data_ets, vars_ets)
+```
+
+
+
+# 6. Plotting the figure 1 and 2
+```{r}
+data <- data[-c(571,572),]
+
+## Figure 1
+plot1 <- ggplot(data, aes(year)) + 
+  geom_point(aes(y=emission1996)) +
+  geom_line(aes(y=gdp1996)) +
+  labs(x="Year", y="Real GDP of USD 2010 constant and CO2eq emission (1=1996)") +
+  theme(axis.title.x=element_text(size=14)) +
+  theme(axis.title.y=element_text(size=14)) +
+  facet_wrap(~countrycode, nrow=5)
+plot1 + theme_gray()
+
+## Figure 2
+plot2 <- ggplot(data = data, aes(year,decoup)) + 
+  geom_point() +
+  labs(x="Year", y="Decoupling (Emission (kgCO2eq) per GDP $1,000)") +
+  theme(axis.title.x=element_text(size=14)) +
+  theme(axis.title.y=element_text(size=14)) +
+  facet_wrap(~countrycode, nrow=5)
+plot2 + theme_gray()
+```
+
+# 7. Cluster-robust standard errors 
+
+```{r}
+HC2_1f <- coef_test(model1f, vcov = "CR2", 
+          cluster = "individual", test = "Satterthwaite")
+HC2_1r <- coef_test(model1r, vcov = "CR2", 
+          cluster = "individual", test = "Satterthwaite")
+HC2_2f <- coef_test(model2f, vcov = "CR2", 
+          cluster = "individual", test = "Satterthwaite")
+HC2_2r <- coef_test(model2r, vcov = "CR2", 
+          cluster = "individual", test = "Satterthwaite")
+```
+
+**Plotting the results (not included in the paper)**
+
+```{r}
+HC2_1f # cluster-robust standard error model for Model 1 (fixed effects)
+HC2_1r # cluster-robust standard error model for Model 1 (random effects)
+HC2_2f # cluster-robust standard error model for Model 2 (fixed effects)
+HC2_2r # cluster-robust standard error model for Model 2 (random effects)
+
+```
+
+
+# 8. Correlation table (Appendix A)
+```{r}
+## 
+data3 <- subset(data, subset=(data$countrycode!="ICE")) ## data without ICELAND
+data3 <- pdata.frame(data3, index=c("countrycode","year"))
+data3 <- data3[-c(1:2),]
+
+## re-extract necessary variables
+cordata <- data3[, c(17,28,29,23,24,22,21,6,16,27)]
+
+## correlation and its p-value table
+corp <- rcorr(as.matrix(cordata))
+
+## save them seperately into two variables
+corp1 <- data.frame(corp$r)
+corp2 <- data.frame(corp$P)
+
+## allow round for p-value table up to 10^-3
+corp2<-round(corp2, 3)
+
+## save them in a different excel file
+write.csv(corp1, "corp1.csv")
+write.csv(corp2, "corp2.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
