@@ -1,0 +1,246 @@
+---
+title: "decoupling_final"
+author: "Inhwan Ko, Taedong Lee"
+date: 'Aug 7, 2020'
+output: html_document
+---
+
+## Ko, Inhwan, and Taedong Lee. Carbon pricing policies and decoupling between greenhouse gas emissions and economic growth: A panel study of 29 European countries, 1996-2014. \newline
+
+**Authors' bio**  
+**Inhwan Ko**  
+PhD student, Department of Political Science, University of Washington, Seattle, US  
+**Taedong Lee, PhD**  
+Associate Professor, Political Science Department, Seoul, Korea  
+
+**Abstract**
+This study explores why the levels of decoupling between greenhouse gas (GHG) emissions and economic growth vary across time and between countries, and examines which factors are driving this decoupling. We argue that the implementation of carbon pricing policies facilitates decoupling, as they are designed to achieve cost-efficient GHG reduction. We analyze the panel data of 30 European countries between 1996 and 2014 to examine the relationships between two carbon pricing policies, emission trading and carbon tax, and emission intensity (GHG emissions per unit of GDP) we use to capture decoupling trends. Our result indicates that while controlling for factors that may affect emission intensity, emission trading contributes to decoupling in all models, whereas carbon tax does not; this has also been suggested in previous literature. Furthermore, emission trading is negatively associated with GHG emissions, implying that it contributes to not weak, but strong decoupling of economic growth from GHG emissions.
+
+**Data**
+https://github.com/inhwanko/carbonpricing_decoupling
+
+# 1. Load neccessary packages and data
+
+```{r, warning=F, message=F}
+library(foreign)
+library(tidyverse)
+library(plm)
+library(cem)
+library(ggplot2)
+library(ggpubr)
+library(estimatr)
+library(broom)
+library(stargazer)
+library(Hmisc)
+library(MASS)
+library(lmtest)
+
+# setwd("~")
+rawdata <- read.csv("decoupling.csv") ## raw dataset is uploaded on the github 
+rawdata <- as_tibble(rawdata)
+rawdata <- rawdata[,-1]
+rawdata
+```
+
+# 2. Data cleaning
+
+```{r, warning=F, message=F}
+
+rawdata$gdpgrowth <- as.numeric(rawdata$gdpgrowth)
+data <- rawdata %>% 
+  filter(year!=2015 & year!=2016 & year!=2017 & year!=2018)
+
+data <- pdata.frame(data, index=c("countrycode","year"))
+```
+
+# 3. Model results
+
+## Model 1
+
+```{r}
+model1f <- plm(decoup ~ ets + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 urbanpopper + polity + gdpgrowth + 
+                 indpergdp, 
+               data=data, model="within",
+               effect = "twoway")
+
+model1r <- plm(decoup ~ ets + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 urbanpopper + polity + gdpgrowth + 
+                 indpergdp, 
+               data=data, model="random",
+               effect = "twoway")
+
+phtest(model1f, model1r) 
+
+coeftest(model1f, vcov=vcovBK(model1f))
+coeftest(model1f, vcov=vcovHC(model1f))
+coeftest(model1f, vcov=vcovSCC(model1f))
+```
+
+**What if interaction exists?**
+
+```{r}
+model1f_1 <- plm(decoup ~ ets + carbontax*ets +
+                co2inten*ets + epdtloss*ets +
+                 consumere*ets + consumeff*ets +
+                 urbanpopper*ets + polity*ets + gdpgrowth*ets + 
+                 indpergdp*ets, 
+               data=data, model="within",
+               effect = "twoway")
+
+summary(model1f_1)
+coeftest(model1f_1, vcov=vcovBK(model1f_1))
+
+```
+
+## Model 2
+
+```{r}
+## Model 2
+model2f <- plm(emission ~ ets + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 urbanpopper + polity + gdpgrowth + 
+                 indpergdp, 
+               data=data, model="within",
+               effect = "twoway")
+
+model2r <- plm(emission ~ ets + carbontax +
+                 co2inten + epdtloss +
+                 consumere + consumeff +
+                 urbanpopper + polity + gdpgrowth + 
+                 indpergdp, 
+               data=data, model="random",
+               effect = "twoway")
+
+phtest(model2f, model2r) 
+
+coeftest(model2f, vcov=vcovBK(model2f))
+coeftest(model2f, vcov=vcovHC(model2f))
+
+```
+
+## Model results summary
+
+```{r, results='asis'}
+stargazer(model1f, model2f, type='html')
+stargazer(model1r, model2r, type='html')
+```
+
+# 4. Coarsened Exact Matching
+
+```{r, warning=F, message=F}
+require(cem)
+
+## assigning treatment value (1- ETS, 0- No ETS)
+
+ets1 <- which(data$ets==1)
+ets0 <- which(data$ets==0)
+nets1 <- length(ets1)
+nets0 <- length(ets0)
+
+## checking naive mean difference
+
+mean(data$decoup[ets1])-mean(data$decoup[ets0])
+
+## assigning control variables (including carbon tax)
+
+vars_ets <- c("carbontax", "co2inten","epdtloss","consumere","consumeff","urbanpopper","polity","gdpgrowth","indpergdp")
+
+## you will only need variables to do the matching, without countrycode and year
+colnames(data)
+data_ets <- data[,c(6,11,12,13,14,15,16,18,20,19,21)]
+
+## deriving univariate imbalance measures:
+
+imbalance(group=data_ets$ets, data=data_ets[vars_ets])
+
+## do matching
+mat <- cem(treatment="ets", data=data_ets, drop="decoup")
+mat
+```
+
+```{r}
+ets_linear <- att(mat, decoup~ets, data=data_ets, model="linear")
+
+ets_linear_control <- att(mat, decoup~ets + carbontax + co2inten + epdtloss + consumere + consumeff + urbanpopper + polity + gdpgrowth + indpergdp, data=data_ets,
+                  model="linear") 
+
+ets_linearRE_control <- att(mat, decoup~ets + carbontax + co2inten + epdtloss + consumere + consumeff + urbanpopper + polity + gdpgrowth + indpergdp, data=data_ets,
+                  model="linear-RE") 
+
+ets_linear ## first row of table 
+ets_linear_control ## second row of the table
+ets_linearRE_control ## third row of the table
+
+plot(ets_linear_control, mat, data_ets, vars_ets)
+plot(ets_linearRE_control, mat, data_ets, vars_ets)
+```
+
+# 5. Plots
+
+## Figure 1
+
+```{r}
+plot1 <- ggplot(data, aes(x=year)) + 
+  geom_point(aes(y=emission1996)) +
+  geom_line(aes(y=gdp1996, group=1)) +
+  labs(x="Year", y="Real GDP of USD 2010 constant and CO2eq emission (1=1996)") +
+  theme(axis.title.x=element_text(size=14)) +
+  theme(axis.title.y=element_text(size=14)) +
+  scale_x_discrete(breaks=c(2000, 2005, 2010)) +
+  facet_wrap(~countrycode, nrow=5)
+
+plot1 + theme_gray()
+```
+
+## Figure 2
+
+```{r}
+## Figure 2
+plot2 <- ggplot(data = data, aes(year,decoup)) + 
+  geom_point() +
+  labs(x="Year", y="Decoupling (Emission (kgCO2eq) per GDP $1,000)") +
+  theme(axis.title.x=element_text(size=14)) +
+  theme(axis.title.y=element_text(size=14)) +
+  scale_x_discrete(breaks=c(2000, 2005, 2010)) +
+  facet_wrap(~countrycode, nrow=5)
+
+plot2 + theme_gray()
+
+```
+
+
+```{r}
+library(readxl)
+korea <- read_excel("korea.xlsx")
+plot3 <- ggplot(korea, aes(x=year)) + 
+  geom_point(aes(y=emission1996)) +
+  geom_line(aes(y=gdp1996, group=1)) +
+  labs(x="Year", y="Real GDP of USD 2010 constant and CO2eq emission (1=1996)") +
+  theme(axis.title.x=element_text(size=14)) +
+  theme(axis.title.y=element_text(size=14))
+
+plot3 + theme_gray()
+  
+```
+
+```{r}
+plot4 <- ggplot(data = korea, aes(year,decoup)) + 
+  geom_point() +
+  labs(x="Year", y="Decoupling (Emission (kgCO2eq) per GDP $1,000)") +
+  theme(axis.title.x=element_text(size=14)) +
+  theme(axis.title.y=element_text(size=14)) 
+
+plot4 + theme_gray()
+```
+
+
+
+
+
+
